@@ -81,7 +81,7 @@ class GeneticAlgo(object):
     random.seed(seed)
     trace("Using random seed", seed)
     for i in range(self.params.population):
-      member = random.randint(0, 2 ** BITCOUNT)
+      member = random.randint(0, (2 ** BITCOUNT) - 1)
       self.population.append(member)
 
   def evolve(self):
