@@ -22,6 +22,24 @@ run.
 Problem author is
 [Dr.sc. Marko Horvat, dipl. ing.](http://marko-horvat.name/site/).
 
+## Evaluation
+
+You can evaluate the performance (convergence) with the following script:
+
+```sh
+# 1024 is chosen to be able to fit on the same graph as the fitness function.
+for i in $(seq 0 1023); do
+  echo $i $(python ga.py 2>/dev/null | \
+            grep "max" | \
+            tail -n 1 | \
+            cut -f 2 -d ',' | \
+            sed s"/ max = //");
+done > eval.txt
+```
+
+And then visualize the results in in excel/google sheets like
+[here](https://docs.google.com/spreadsheets/d/1b0Tjra9tDq3530ZUAoBu_7oIPzdg1NLM0HyxdCvkgns/edit#gid=1612904409).
+
 ## Sample reproducable run at near global optimum
 
 ```sh

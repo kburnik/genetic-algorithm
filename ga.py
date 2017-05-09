@@ -100,8 +100,8 @@ class GeneticAlgo(object):
       for i in range(len(selection)):
         if random.random() < self.params.mutation:
           selection[i] = mutate(selection[i])
-      self.population = selection
 
+      self.population = selection
       yield generation
 
   def select(self, population):
