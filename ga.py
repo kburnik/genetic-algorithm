@@ -86,7 +86,7 @@ class GeneticAlgo(object):
 
   def evolve(self):
     """Generator where each iteration is an evolution step."""
-    for i in range(self.params.iterations):
+    for generation in range(self.params.iterations):
       # 1) Selection.
       selection = self.select(self.population)
 
@@ -102,7 +102,7 @@ class GeneticAlgo(object):
           selection[i] = mutate(selection[i])
       self.population = selection
 
-      yield i
+      yield generation
 
   def select(self, population):
     """Fitness proportionate selection algorithm. Returns the selection
