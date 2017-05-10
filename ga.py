@@ -101,26 +101,16 @@ class GeneticAlgo(object):
         if random.random() < self.params.mutation:
           selection[i] = mutate(selection[i])
 
-      self.population = selection
+      self.population = list(sorted([member for member in selection],
+                             reverse=True,
+                             key=lambda member: fitness(member)))
       yield generation
 
   def select(self, population):
-    """Fitness proportionate selection algorithm. Returns the selection
-       sorted by fitness descending.
-       https://en.wikipedia.org/wiki/Fitness_proportionate_selection"""
-    selection = []
-    fits = [fitness(member) for member in population]
-    sum_fits = sum(fits)
-    avg_fit = sum_fits / len(fits)
-    normalized_fits = [(member, fitness(member) / sum_fits)
-                       for member in population]
-    normalized_fits = list(sorted(normalized_fits, key=lambda x: x[1],
-                                  reverse=True))
-    accumulated = 0
-    accumulated_fits = []
-    for x in normalized_fits:
-      accumulated += x[1]
-      accumulated_fits.append((x[0], accumulated))
+    """Sort existing population by fitness descending."""
+    return list(sorted([member for member in population],
+                       reverse=True,
+                       key=lambda member: fitness(member)))
 
     # TODO(kburnik): This can be optimized.
     while len(selection) < len(population):
