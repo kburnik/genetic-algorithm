@@ -6,15 +6,23 @@ We start with a population which has individuals of chromosome length of 10
 bits. The fitness functions is predefined and you can see it in
 [this graph](http://bit.ly/ui-lab5-dobrota-graf).
 
-Fitness proportionate selection algorithm is used for population selection.
-No elitism is involved. Crossing over is done as a single point cross over.
-Mutation is done by flipping random number of bits up to 9.
-
 You can use command line arguments to control the genetic parameters.
 
 ```
 python ga.py -h
 ```
+
+You can choose the selection strategy with `-t` or `--selection_strategy` flag:
+
+* `fitness-proportional` Fitness proportionate selection algorithm is used for
+  population selection. Crossing over is done as a single point cross over.
+  Mutation is done by flipping random number of bits up to 9.
+
+* `uniform` Uniform selection is used and crossover is done by copying the same
+  bits of the parents to the child and the remaining different bits are randomly
+  chosen from each parent.
+
+If you want elitism, just use the `-e` or `--elitism` flag.
 
 The program will output the random seed used to stderr so you can reproduce each
 run.
@@ -29,11 +37,11 @@ You can evaluate the performance (convergence) with the following script:
 ```sh
 # 1024 is chosen to be able to fit on the same graph as the fitness function.
 for i in $(seq 0 1023); do
-  echo $i $(python ga.py 2>/dev/null | \
-            grep "max" | \
-            tail -n 1 | \
-            cut -f 2 -d ',' | \
-            sed s"/ max = //");
+  python ga.py 2>/dev/null | \
+         grep "max" | \
+         tail -n 1 | \
+         cut -f 2 -d ',' | \
+        sed s"/ max = //";
 done > eval.txt
 ```
 
@@ -98,4 +106,10 @@ Generation 30
 1111100110  998    0.00
 1111110001 1009    0.00
 min = 0.00, max = 268, avg = 117.73
+```
+
+## Run with uniform selection and elitism
+
+```
+python ga.py -t uniform -e
 ```

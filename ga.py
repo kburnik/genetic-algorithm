@@ -25,18 +25,6 @@ def decode(member):
   return bin(member)[2:].zfill(BITCOUNT)
 
 
-def crossover(a, b, pos=None):
-  """Crosses over two members by cutting at point pos (right to left).
-     If pos is None, a random number between 1 and BITCOUNT-1 is used."""
-  if pos is None:
-    pos = random.randint(1, BITCOUNT - 1)
-  mask = (2 ** pos) - 1
-  invmask = (2 ** BITCOUNT) - mask - 1
-  na = (a & invmask) | (b & mask)
-  nb = (b & invmask) | (a & mask)
-  return (na, nb)
-
-
 def mutate(member, num_bits=None):
   """Mutates a member by fliping up to num_bits random bits. if num_bits is None
      a random value from 1 to BITCOUNT is used."""
@@ -49,6 +37,11 @@ def mutate(member, num_bits=None):
   return member
 
 
+def argmax(values):
+  """Returns the index of the largest value in a list."""
+  return max(enumerate(values), key=lambda x: x[1])[0]
+
+
 class Defaults:
   """Default values for params."""
   CROSSING_PROBABILITY = 0.9
@@ -56,62 +49,38 @@ class Defaults:
   ITERATION_COUNT = 30
   INITIAL_POPULATION = 20
   RANDOM_SEED = None
+  SELECTION_STRATEGY = "fitness-proportional"
+  ELITISM = False
 
 
 class Params(object):
   """Parameters of a genetic algorithm."""
-  def __init__(self, crossing, mutation, iterations, population, random_seed):
+  def __init__(self, crossing, mutation, iterations, population, random_seed,
+               selection_strategy, elitism):
     self.crossing = crossing
     self.mutation = mutation
     self.iterations = iterations
     self.population = population
     self.random_seed = random_seed
+    self.selection_strategy = selection_strategy
+    self.elitism = elitism
 
-class GeneticAlgo(object):
-  """Represents a genetic algorithm"""
-  def __init__(self, params):
-    self.params = params
-    self.population = []
 
-  def initialize(self):
-    """Initializes the population."""
-    seed = self.params.random_seed
-    if seed is None:
-      seed = hash(os.urandom(URANDOM_STRING_LENGTH))
-    random.seed(seed)
-    trace("Using random seed", seed)
-    for i in range(self.params.population):
-      member = random.randint(0, (2 ** BITCOUNT) - 1)
-      self.population.append(member)
+class SelectionStrategy(object):
+  """Abstract class for a selection strategy."""
+  def select_and_crossover(self, population, crossing):
+    raise Exception("Method not implemented.")
 
-  def evolve(self):
-    """Generator where each iteration is an evolution step."""
-    for generation in range(self.params.iterations):
-      # 1) Selection.
-      selection = self.select(self.population)
 
-      # 2) Crossover.
-      for i in range(0, len(selection) - 1, 2):
-        if random.random() < self.params.crossing:
-          selection[i], selection[i + 1] = \
-            crossover(selection[i], selection[i + 1])
+class FitnessProportionalSelection(SelectionStrategy):
+  """Fitness proportionate selection algorithm. Returns the selection
+     sorted by fitness descending.
+     https://en.wikipedia.org/wiki/Fitness_proportionate_selection"""
 
-      # 3) Mutation.
-      for i in range(len(selection)):
-        if random.random() < self.params.mutation:
-          selection[i] = mutate(selection[i])
-
-      self.population = selection
-      yield generation
-
-  def select(self, population):
-    """Fitness proportionate selection algorithm. Returns the selection
-       sorted by fitness descending.
-       https://en.wikipedia.org/wiki/Fitness_proportionate_selection"""
+  def _select(self, population):
     selection = []
     fits = [fitness(member) for member in population]
     sum_fits = sum(fits)
-    avg_fit = sum_fits / len(fits)
     normalized_fits = [(member, fitness(member) / sum_fits)
                        for member in population]
     normalized_fits = list(sorted(normalized_fits, key=lambda x: x[1],
@@ -136,11 +105,131 @@ class GeneticAlgo(object):
           break
     return list(sorted(selection, key=lambda m: fitness(m), reverse=True))
 
+  def _crossover(self, a, b):
+    """Crosses over two members by cutting at radnom point pos (right to left).
+    """
+    pos = random.randint(1, BITCOUNT - 1)
+    mask = (2 ** pos) - 1
+    invmask = (2 ** BITCOUNT) - mask - 1
+    na = (a & invmask) | (b & mask)
+    nb = (b & invmask) | (a & mask)
+    return (na, nb)
+
+  def select_and_crossover(self, population, crossing):
+    # 1) Select.
+    selection = self._select(population)
+    # 2) Crossover.
+    for i in range(0, len(selection) - 1, 2):
+      if random.random() < crossing:
+        selection[i], selection[i + 1] = \
+            self._crossover(selection[i], selection[i + 1])
+    return selection
+
+
+class UniformSelection(SelectionStrategy):
+  """A Uniform selection strategy, all members of the population are equally
+     likely to be chosen for crossover. The crossover is done by keeping same
+     bits of parents and randomly choosing a the bit that differs."""
+
+  def _crossover(self, a, b):
+    # Create mask of different bits from both parents.
+    diffmask = a ^ b
+    # Copy the same bits to child.
+    child = a & b
+    parents = [a, b]
+    val = 1
+    while diffmask > 0:
+      # Check if the bit is set.
+      if diffmask % 2 == 1:
+        # Choose parent randomly. 50/50 chance.
+        parent = parents[random.randint(0, 1)]
+        # Copy the set bit from the chosen parent to the child.
+        child |= (parent & val)
+      diffmask /= 2
+      val *= 2
+    return child
+
+  def select_and_crossover(self, population, crossing):
+    selection = set()
+    used_pairs = set()
+    while len(selection) < len(population):
+      pair = tuple(random.sample(population, 2))
+      if pair in used_pairs:
+        continue
+      used_pairs.add(pair)
+      if random.random() < crossing:
+        child = self._crossover(*pair)
+        selection.add(child)
+      else:
+        selection.add(pair[0])
+        selection.add(pair[1])
+    selection = list(selection)
+    while len(selection) > len(population):
+      selection.pop()
+    return selection
+
+
+class GeneticAlgo(object):
+  """Represents a genetic algorithm"""
+  def __init__(self, params):
+    self.params = params
+    self.population = []
+    self.elite_member = None
+    if params.selection_strategy == "fitness-proportional":
+      self.selection_strategy = FitnessProportionalSelection()
+    elif params.selection_strategy == "uniform":
+      self.selection_strategy = UniformSelection()
+    else:
+      raise Exception("Invalid strategy %s" % params.selection_strategy)
+
+  def initialize(self):
+    """Initializes the population."""
+    seed = self.params.random_seed
+    if seed is None:
+      seed = hash(os.urandom(URANDOM_STRING_LENGTH))
+    random.seed(seed)
+    trace("Using random seed", seed)
+    for i in range(self.params.population):
+      member = random.randint(0, (2 ** BITCOUNT) - 1)
+      self.population.append(member)
+
+  def evolve(self):
+    """Generator where each iteration is an evolution step."""
+    for generation in range(self.params.iterations):
+      # 1) Select and 2) Crossover.
+      selection = self.selection_strategy.select_and_crossover(
+          self.population, self.params.crossing)
+
+      # Find the elite member if elitism is enabled.
+      elite_index = -1
+      self.elite_member = None
+      if self.params.elitism:
+        elite_index = argmax([fitness(member) for member in selection])
+        self.elite_member = selection[elite_index]
+
+      # 3) Mutation.
+      for i in range(len(selection)):
+        # If elitism is enabled, don't mutate no matter the odds.
+        if i != elite_index and random.random() < self.params.mutation:
+          selection[i] = mutate(selection[i])
+
+      self.population = list(sorted(selection,
+                                    key=lambda x: fitness(x),
+                                    reverse=True))
+      yield generation
+
   def display(self):
     """Prints the current population"""
-    print "%10s %4s %7s" % ("bin", "int", "fitness")
+    print "%10s %4s %7s %6s" % ("bin", "int", "fitness", "elite")
     for member in self.population:
-      print "%10s %4s %7.2f" % (decode(member), member, fitness(member))
+      if self.elite_member == member:
+        elite = "ELITE"
+      elif self.params.elitism:
+        elite = "-"
+      else:
+        elite = "n/a"
+      print "%10s %4s %7.2f %6s" % \
+          (decode(member), member, fitness(member), elite)
     fits = [fitness(member) for member in self.population]
     minval = min(fits)
     maxval = max(fits)
@@ -159,7 +248,14 @@ if __name__ == "__main__":
   ap.add_argument("-p", "--population", default=Defaults.INITIAL_POPULATION,
                   type=int, help="Initial population (integer)")
   ap.add_argument("-s", "--random_seed", default=Defaults.RANDOM_SEED, type=int,
-                   help="Random seed. Omit to use system clock.")
+                  help="Random seed. Omit to use system clock.")
+  ap.add_argument("-t", "--selection_strategy",
+                  default=Defaults.SELECTION_STRATEGY, type=str,
+                  choices=["fitness-proportional", "uniform"],
+                  help="The strategy to use for selection and crossover.")
+  ap.add_argument("-e", "--elitism", default=Defaults.ELITISM,
+                  action="store_true",
+                  help="Whether to use elitism (don't mutate best member).")
   args_dict = vars(ap.parse_args())
   params = Params(**args_dict)
   ga = GeneticAlgo(params)
@@ -169,4 +265,3 @@ if __name__ == "__main__":
     print "Generation", i + 1
     ga.display()
     print ""
-
